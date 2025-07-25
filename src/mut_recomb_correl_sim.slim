@@ -1,0 +1,98 @@
+// assumed input parameters:
+//		N = population size
+//		MU = mutation rate
+//		RHO = recombination rate
+//		S = selection coefficient for non-neutral (m2) sites
+//		G = number of generations to run the simulation
+//		TIME = if provided this will output time-series data periodically based on the parameter set, e.g. a value of 10 will output data every 10 generations, a value of 0 will only output the last generation's data. Data will go to a file called "sim_log_XX.txt" in the directory the script is run from, where XX is the seed for this run. -- note that you will need to put extra quotes when using this option on a unix command line (see the SLiM manual, or example below)
+//		FILE = file name to write teh final generation data to, this will overwrite the file, not append to it. If not provided then output will go to stdout.
+//		
+// Usage:
+//		slim -d N=5000 -d MU=1e-7 -d RHO=2e-7 S=0.001 -d G=5000 -d TIME=0 -d "FILE='out.txt'" mut_recomb_correl_sim.slim 
+//
+//		note the structure of the quotes around the FILE argument
+//
+// Output: 
+//		outputs as a CSV
+//		seed, N, MU, RHO, S, Num_neutral, Num_sel, pi_neutral, pi_sel
+//		where pi_x is average pariwise differences across the entire population, pi_neutral is for neutral mutations (m1) and pi_sel is selected mutations (m2)
+//		where Num_x is the total number of segregating mutations in the population, _neutral and _sel for m1 and m2 mutations repsectively
+//		both these metrics are calculated only in the final generation, unless the TIME parameter is specified to a value > 0
+
+
+initialize() {
+	//set up some defaults for running in SLiMgui during testing
+	 if (exists("slimgui"))
+    {
+    	defineConstant("N", 500);
+    	defineConstant("MU", 1e-7);
+    	defineConstant("RHO", 1e-8);
+    	defineConstant("S", -0.001);
+    	defineConstant("G", 500);
+    	defineConstant("TIME", 10);
+    	//defineConstant("FILE", "test.txt");
+	 }
+
+	//get and store the RNG seed for this run
+	defineConstant("seed", getSeed());
+
+	//note that variables in all CAPS are assumed input parameters
+	initializeMutationRate(MU);
+	
+	// m1 mutation type: neutral
+	initializeMutationType("m1", 0.5, "f", 0.0);
+	// m2 mutation type: slightly deleterious
+	initializeMutationType("m2", 0.5, "f", S);
+	
+	// g1 genomic element type: uses 1/3 m1 and 2/3 m2
+	initializeGenomicElementType("g1", c(m1, m2), c(1/3, 2/3));
+	
+	// uniform chromosome of length 100 kb with uniform recombination
+	initializeGenomicElement(g1, 0, 99999);
+	initializeRecombinationRate(RHO);
+}
+
+// create a population of 500 individuals
+1 early() {
+	sim.addSubpop("p1", N);
+	//create the logfile if TIME is specified
+	if(exists("TIME") & TIME > 0){
+		//NOTE in SLiMgui you can select the debug output button (in the output window to the right, small lady bug symbol)
+		//then select the log file to view the output
+		//you can right click a column to get a plot of the data
+		log = community.createLogFile(paste("sim_log_",seed,".txt",sep=""), logInterval=TIME);
+		log.addCycle();
+		log.addCustomColumn("Num_neutral", "sim.countOfMutationsOfType(m1);");
+		log.addCustomColumn("Num_sel", "sim.countOfMutationsOfType(m2);");
+		log.addCustomColumn("pi_neutral", "calcPi(sim.subpopulations.haplosomes, muts=sim.mutationsOfType(m1));");
+		log.addCustomColumn("pi_sel", "calcPi(sim.subpopulations.haplosomes, muts=sim.mutationsOfType(m2));");
+	}
+}
+
+//output the summary stats at the end of the simulation
+G late() {  
+	//calcPi requires slim 4.3 at least
+	//argument 2 determines which mutations to use for calculations
+	//this line calculates pi at only neutral (m1) sites
+	pi_neutral = calcPi(sim.subpopulations.haplosomes, muts=sim.mutationsOfType(m1));
+	num_neutral = sim.countOfMutationsOfType(m1);
+	
+	pi_sel = calcPi(sim.subpopulations.haplosomes, muts=sim.mutationsOfType(m2));
+	num_sel = sim.countOfMutationsOfType(m2);
+	
+	headers = c("Seed", "N", "MU", "RHO", "S", "Num_neutral", "Num_sel", "pi_neutral", "pi_sel");
+	header_csv = paste(headers, sep=", ");
+	data_csv = paste(seed, N, MU, RHO, S,
+		num_neutral, num_sel, pi_neutral, pi_sel, sep=", ");
+	file = paste(header_csv, data_csv, sep="\n");
+	if(exists("FILE")){
+		//write to a file
+		//really should replace this with a try-catch
+		if(!writeFile(FILE, file))
+			stop(paste0("Error writing file ", FILE, " seed - ", seed));
+	}
+	else{
+		//just output to stdout with print()
+		print(file);
+	}
+}
