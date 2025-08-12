@@ -5,7 +5,7 @@ rhos=(1e-7 2e-7 4e-7 6e-7)
 sels=(-0.0001 -0.001 -0.01)
 N=5000
 G=2500
-replicates=20 
+replicates=300 
 final_file="combined_results.csv"
 run_num=1
 
